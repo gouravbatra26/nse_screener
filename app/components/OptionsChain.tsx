@@ -27,6 +27,9 @@ const OptionsChain = () => {
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showOnlyHundreds, setShowOnlyHundreds] = useState(true);
+  const [hideZeroVolumeOI, setHideZeroVolumeOI] = useState(true);
+  const [strikeFilter, setStrikeFilter] = useState<'none' | '100' | '500'>('100');
 
   // Fetch data only once
   useEffect(() => {
@@ -77,19 +80,29 @@ const OptionsChain = () => {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Filter data when expiry changes
+  // Filter data when expiry or filter settings change
   useEffect(() => {
     if (selectedExpiry && allOptionsData.length > 0) {
-      const filtered = allOptionsData
-        .filter(item => item.expiryDate === selectedExpiry)
-        // Filter out strikes where either calls or puts have 0 volume or 0 OI
-        .filter(item => 
+      let filtered = allOptionsData
+        .filter(item => item.expiryDate === selectedExpiry);
+
+      // Apply volume/OI filter if enabled
+      if (hideZeroVolumeOI) {
+        filtered = filtered.filter(item => 
           (item.calls.volume > 0 && item.calls.openInterest > 0) ||
           (item.puts.volume > 0 && item.puts.openInterest > 0)
         );
+      }
+
+      // Apply strike multiple filter if enabled
+      if (strikeFilter !== 'none') {
+        const multiple = strikeFilter === '100' ? 100 : 500;
+        filtered = filtered.filter(item => item.strikePrice % multiple === 0);
+      }
+
       setFilteredOptionsData(filtered);
     }
-  }, [selectedExpiry, allOptionsData]);
+  }, [selectedExpiry, allOptionsData, strikeFilter, hideZeroVolumeOI]);
 
   // Function to calculate the relative width of OI bars
   const getOIBarWidth = (value: number, maxOI: number) => {
@@ -122,6 +135,11 @@ const OptionsChain = () => {
     return callPrice + putPrice;
   };
 
+  // Function to calculate straddle change
+  const calculateStraddleChange = (callChange: number, putChange: number) => {
+    return callChange + putChange;
+  };
+
   if (loading) {
     return (
       <div className="w-full text-center py-8">
@@ -141,23 +159,91 @@ const OptionsChain = () => {
 
   return (
     <div className="w-full overflow-x-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold">NIFTY50 Options Chain</h2>
-        <select
-          className="px-4 py-2 border rounded-md bg-white dark:bg-gray-800"
-          value={selectedExpiry}
-          onChange={(e) => setSelectedExpiry(e.target.value)}
-        >
-          {expiryDates.map(date => (
-            <option key={date} value={date}>
-              {new Date(date).toLocaleDateString('en-IN', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric'
-              })}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-col gap-2 mb-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-bold">NIFTY50 Options Chain</h2>
+          <select
+            className="px-4 py-2 border rounded-md bg-white dark:bg-gray-800"
+            value={selectedExpiry}
+            onChange={(e) => setSelectedExpiry(e.target.value)}
+          >
+            {expiryDates.map(date => (
+              <option key={date} value={date}>
+                {new Date(date).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric'
+                })}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+              </svg>
+              <span>Strike Filter:</span>
+            </div>
+            <div className="flex gap-2">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  className="form-radio text-blue-500"
+                  name="strikeFilter"
+                  checked={strikeFilter === 'none'}
+                  onChange={() => setStrikeFilter('none')}
+                />
+                <span>All</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  className="form-radio text-blue-500"
+                  name="strikeFilter"
+                  checked={strikeFilter === '100'}
+                  onChange={() => setStrikeFilter('100')}
+                />
+                <span>×100</span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="radio"
+                  className="form-radio text-blue-500"
+                  name="strikeFilter"
+                  checked={strikeFilter === '500'}
+                  onChange={() => setStrikeFilter('500')}
+                />
+                <span>×500</span>
+              </label>
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <div className="relative inline-block w-10 h-6 transition duration-200 ease-in-out">
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={hideZeroVolumeOI}
+                onChange={(e) => setHideZeroVolumeOI(e.target.checked)}
+              />
+              <div className={`w-10 h-6 rounded-full transition-colors duration-200 ease-in-out ${
+                hideZeroVolumeOI ? 'bg-blue-500' : 'bg-gray-300'
+              }`}>
+                <div className={`w-4 h-4 mt-1 ml-1 bg-white rounded-full shadow transform duration-200 ease-in-out ${
+                  hideZeroVolumeOI ? 'translate-x-4' : ''
+                }`}></div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path>
+              </svg>
+              <span>Hide zero volume/OI</span>
+            </div>
+          </label>
+        </div>
       </div>
       
       <div className="flex gap-4">
@@ -205,12 +291,13 @@ const OptionsChain = () => {
         </div>
 
         {/* Straddle Price Table */}
-        <div className="w-64">
+        <div className="w-80">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-800">
                 <th className="p-2 border">Strike Price</th>
                 <th className="p-2 border">Straddle</th>
+                <th className="p-2 border">Change</th>
               </tr>
             </thead>
             <tbody>
@@ -219,6 +306,10 @@ const OptionsChain = () => {
                   row.calls.lastPrice,
                   row.puts.lastPrice
                 );
+                const straddleChange = calculateStraddleChange(
+                  row.calls.change,
+                  row.puts.change
+                );
                 return (
                   <tr key={row.strikePrice} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="p-2 border text-center font-bold">
@@ -226,6 +317,12 @@ const OptionsChain = () => {
                     </td>
                     <td className="p-2 border text-right">
                       {straddlePrice.toFixed(2)}
+                    </td>
+                    <td className={`p-2 border text-right ${
+                      straddleChange >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {straddleChange > 0 ? '+' : ''}
+                      {straddleChange.toFixed(2)}
                     </td>
                   </tr>
                 );

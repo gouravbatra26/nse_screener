@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import HeatMap from './HeatMap';
 import { fetchNSEStocks } from '../services/stockService';
-import type { NSEStock } from '../services/stockService';
 
 interface Stock {
   symbol: string;
@@ -11,16 +10,13 @@ interface Stock {
   lastPrice: number;
   change: number;
   totalTradedValue: number;
+  marketCap: number;
 }
 
 type SortField = 'lastPrice' | 'change' | 'totalTradedValue';
 type SortDirection = 'asc' | 'desc';
 
-interface StockTableProps {
-  showHeatMapFirst?: boolean;
-}
-
-const StockTable = ({ showHeatMapFirst = false }: StockTableProps) => {
+const StockTable = () => {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [sortField, setSortField] = useState<SortField>('totalTradedValue');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -38,7 +34,8 @@ const StockTable = ({ showHeatMapFirst = false }: StockTableProps) => {
         name: stock.symbol,
         lastPrice: stock.lastPrice || 0,
         change: stock.pChange,
-        totalTradedValue: stock.totalTradedValue || 0
+        totalTradedValue: stock.totalTradedValue || 0,
+        marketCap: stock.marketCap || stock.lastPrice * 1000000000
       }));
       setStocks(formattedData);
       setLoading(false);
@@ -143,7 +140,14 @@ const StockTable = ({ showHeatMapFirst = false }: StockTableProps) => {
   );
 
   const renderHeatMap = () => (
-    <HeatMap stocks={sortedStocks} />
+    <HeatMap 
+      stocks={sortedStocks.map(stock => ({
+        symbol: stock.symbol,
+        name: stock.name,
+        marketCap: stock.marketCap,
+        change: stock.change
+      }))} 
+    />
   );
 
   return (

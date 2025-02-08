@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import StockTable from '../components/StockTable';
 
 export default function ScreenerPage() {

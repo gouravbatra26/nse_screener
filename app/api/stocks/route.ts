@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server';
 
 const DEFAULT_SHARES_OUTSTANDING = 1000000000; // 1 billion shares
 
+// Add proper type for the stock data
+interface StockData {
+  symbol: string;
+  marketCap: number;
+  totalTradedVolume: number;
+  pChange: number;
+  lastPrice: number;
+}
+
 export async function GET() {
   try {
     // First get the session cookie from NSE website
@@ -52,7 +61,7 @@ export async function GET() {
     const data = await response.json();
     
     // Process the data to ensure market cap is available
-    const processedData = data.data.map((stock: any) => ({
+    const processedData = data.data.map((stock: StockData) => ({
       ...stock,
       marketCap: stock.marketCap || stock.lastPrice * DEFAULT_SHARES_OUTSTANDING
     }));

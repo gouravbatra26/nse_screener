@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { fetchOptionsData } from '../services/optionsService';
 import AllExpiryTable from './AllExpiryTable';
 
@@ -29,7 +29,7 @@ interface StrikeFilter {
 }
 
 // Update the symbol type to include the correct format
-type IndexSymbol = 'NIFTY' | 'BANKNIFTY';
+// type IndexSymbol = 'NIFTY' | 'BANKNIFTY';
 
 // Add new interfaces and state
 interface StraddleAction {
@@ -56,6 +56,7 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [strikeFilter, setStrikeFilter] = useState<StrikeFilter>({
     multiple: 'none',
     showATM: true
@@ -64,6 +65,17 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
   const [selectedStraddle, setSelectedStraddle] = useState<StraddleAction | null>(null);
   // Add view mode state
   const [viewMode, setViewMode] = useState<ViewMode>('normal');
+
+  // Wrap findATMStrike in useCallback
+  const findATMStrike = useCallback((data: OptionData[]) => {
+    if (data.length === 0 || spotPrice === 0) return 0;
+    
+    const sortedStrikes = [...data].sort((a, b) => 
+      Math.abs(a.strikePrice - spotPrice) - Math.abs(b.strikePrice - spotPrice)
+    );
+
+    return sortedStrikes[0].strikePrice;
+  }, [spotPrice]);
 
   // Fetch data only once
   useEffect(() => {
@@ -113,19 +125,7 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
     // Set up auto-refresh every 1 hour
     const intervalId = setInterval(fetchData, 3600000);
     return () => clearInterval(intervalId);
-  }, [defaultIndex]);
-
-  // Function to find ATM strike price
-  const findATMStrike = (data: OptionData[]) => {
-    if (data.length === 0 || spotPrice === 0) return 0;
-    
-    // Find the strike price closest to spot price
-    const sortedStrikes = [...data].sort((a, b) => 
-      Math.abs(a.strikePrice - spotPrice) - Math.abs(b.strikePrice - spotPrice)
-    );
-
-    return sortedStrikes[0].strikePrice;
-  };
+  }, [defaultIndex, selectedExpiry]);
 
   // Update the filtering logic in useEffect
   useEffect(() => {
@@ -155,7 +155,7 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
       
       setFilteredOptionsData(filtered);
     }
-  }, [selectedExpiry, allOptionsData, strikeFilter, spotPrice]);
+  }, [selectedExpiry, allOptionsData, strikeFilter, spotPrice, findATMStrike]);
 
   // Function to calculate the relative width of OI bars
   const getOIBarWidth = (value: number, maxOI: number) => {
@@ -244,21 +244,6 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
         </div>
       </>
     );
-  };
-
-  // Update the filter options based on the index
-  const filterOptions = ({ defaultIndex }: { defaultIndex: 'NIFTY' | 'BANKNIFTY' }) => {
-    if (defaultIndex === 'NIFTY') {
-      return [
-        { value: 'none', label: 'All' },
-        { value: '100', label: '×100' },
-        { value: '500', label: '×500' },
-      ];
-    }
-    return [
-      { value: 'none', label: 'All' },
-      { value: '500', label: '×500' },
-    ];
   };
 
   if (loading) {
@@ -486,9 +471,7 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
           optionsData={allOptionsData}
           expiryDates={expiryDates}
           atmStrike={atmStrike}
-          spotPrice={spotPrice}
           strikeFilter={strikeFilter}
-          defaultIndex={defaultIndex}
         />
       )}
 

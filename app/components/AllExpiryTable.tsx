@@ -5,25 +5,23 @@ import type { OptionData } from './OptionsChain';
 
 type ViewType = 'ltp' | 'change' | 'oi';
 
+interface StrikeFilter {
+  multiple: 'none' | '100' | '500';
+  showATM: boolean;
+}
+
 interface AllExpiryTableProps {
   optionsData: OptionData[];
   expiryDates: string[];
   atmStrike: number;
-  spotPrice: number;
-  strikeFilter: {
-    multiple: 'none' | '100' | '500';
-    showATM: boolean;
-  };
-  defaultIndex: 'NIFTY' | 'BANKNIFTY';
+  strikeFilter: StrikeFilter;
 }
 
 const AllExpiryTable = ({ 
   optionsData, 
   expiryDates, 
   atmStrike, 
-  spotPrice,
-  strikeFilter,
-  defaultIndex
+  strikeFilter
 }: AllExpiryTableProps) => {
   const [viewType, setViewType] = useState<ViewType>('ltp');
 

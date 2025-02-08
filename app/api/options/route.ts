@@ -3,8 +3,27 @@ import { NextRequest } from 'next/server';
 
 // Add this interface above the GET function
 interface OptionRecord {
+  strikePrice: number;
   expiryDate: string;
-  // Add other fields as needed
+  CE?: {
+    lastPrice: number;
+    change: number;
+    openInterest: number;
+    totalTradedVolume: number;
+  };
+  PE?: {
+    lastPrice: number;
+    change: number;
+    openInterest: number;
+    totalTradedVolume: number;
+  };
+}
+
+interface NSEResponse {
+  records: {
+    data: OptionRecord[];
+    underlyingValue: number;
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -90,24 +109,27 @@ export async function GET(request: NextRequest) {
       throw new Error(`Failed to fetch options data: ${optionsResponse.status}`);
     }
 
-    const data = await optionsResponse.json();
+    const data = await optionsResponse.json() as NSEResponse;
     
+    // Fix the type error by explicitly typing the Set values
     const expiryDates = [...new Set(data.records.data.map((item: OptionRecord) => item.expiryDate))]
-      .sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime());
+      .sort((a, b) => {
+        // Ensure we're working with strings
+        const dateA = new Date(a as string).getTime();
+        const dateB = new Date(b as string).getTime();
+        return dateA - dateB;
+      });
     
     return NextResponse.json({
-      ...data,
-      expiryDates
+      data: data.records.data,
+      expiryDates,
+      underlyingValue: data.records.underlyingValue
     });
 
   } catch (error) {
     console.error('Error fetching options data:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to fetch options data', 
-        details: (error as Error).message,
-        timestamp: new Date().toISOString()
-      },
+      { error: 'Failed to fetch options data' },
       { status: 500 }
     );
   }

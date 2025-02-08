@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { fetchOptionsData } from '../services/optionsService';
+import AllExpiryTable from './AllExpiryTable';
 
-interface OptionData {
+// At the top of the file, add export to the interface
+export interface OptionData {
   strikePrice: number;
   expiryDate: string;
   calls: {
@@ -20,25 +22,58 @@ interface OptionData {
   };
 }
 
-const OptionsChain = () => {
+// Update the interface for strike filter to handle both stages
+interface StrikeFilter {
+  multiple: 'none' | '100' | '500';
+  showATM: boolean;
+}
+
+// Update the symbol type to include the correct format
+type IndexSymbol = 'NIFTY' | 'BANKNIFTY';
+
+// Add new interfaces and state
+interface StraddleAction {
+  strikePrice: number;
+  position: 'buy' | 'sell' | null;
+  x: number;  // Mouse click X coordinate
+  y: number;  // Mouse click Y coordinate
+  straddlePrice: number;  // Add this
+}
+
+// Remove the index selector from the component
+// Update the component to accept a defaultIndex prop
+interface OptionsChainProps {
+  defaultIndex: 'NIFTY' | 'BANKNIFTY';
+}
+
+// Add new type for view mode
+type ViewMode = 'normal' | 'allExpiry';
+
+const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
   const [allOptionsData, setAllOptionsData] = useState<OptionData[]>([]);
   const [filteredOptionsData, setFilteredOptionsData] = useState<OptionData[]>([]);
   const [expiryDates, setExpiryDates] = useState<string[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showOnlyHundreds, setShowOnlyHundreds] = useState(true);
-  const [hideZeroVolumeOI, setHideZeroVolumeOI] = useState(true);
-  const [strikeFilter, setStrikeFilter] = useState<'none' | '100' | '500'>('100');
+  const [strikeFilter, setStrikeFilter] = useState<StrikeFilter>({
+    multiple: 'none',
+    showATM: true
+  });
+  const [spotPrice, setSpotPrice] = useState<number>(0);
+  const [selectedStraddle, setSelectedStraddle] = useState<StraddleAction | null>(null);
+  // Add view mode state
+  const [viewMode, setViewMode] = useState<ViewMode>('normal');
 
   // Fetch data only once
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await fetchOptionsData();
+        const response = await fetchOptionsData(defaultIndex);
         
         setExpiryDates(response.expiryDates);
+        setSpotPrice(response.underlyingValue);
         if (!selectedExpiry && response.expiryDates.length > 0) {
           setSelectedExpiry(response.expiryDates[0]);
         }
@@ -66,8 +101,8 @@ const OptionsChain = () => {
         setAllOptionsData(transformedData);
         setError(null);
       } catch (err) {
+        console.error('Error in fetchData:', err);
         setError('Failed to fetch options data. Please try again later.');
-        console.error(err);
       } finally {
         setLoading(false);
       }
@@ -78,31 +113,49 @@ const OptionsChain = () => {
     // Set up auto-refresh every 1 hour
     const intervalId = setInterval(fetchData, 3600000);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [defaultIndex]);
 
-  // Filter data when expiry or filter settings change
+  // Function to find ATM strike price
+  const findATMStrike = (data: OptionData[]) => {
+    if (data.length === 0 || spotPrice === 0) return 0;
+    
+    // Find the strike price closest to spot price
+    const sortedStrikes = [...data].sort((a, b) => 
+      Math.abs(a.strikePrice - spotPrice) - Math.abs(b.strikePrice - spotPrice)
+    );
+
+    return sortedStrikes[0].strikePrice;
+  };
+
+  // Update the filtering logic in useEffect
   useEffect(() => {
     if (selectedExpiry && allOptionsData.length > 0) {
       let filtered = allOptionsData
         .filter(item => item.expiryDate === selectedExpiry);
 
-      // Apply volume/OI filter if enabled
-      if (hideZeroVolumeOI) {
-        filtered = filtered.filter(item => 
-          (item.calls.volume > 0 && item.calls.openInterest > 0) ||
-          (item.puts.volume > 0 && item.puts.openInterest > 0)
-        );
-      }
-
-      // Apply strike multiple filter if enabled
-      if (strikeFilter !== 'none') {
-        const multiple = strikeFilter === '100' ? 100 : 500;
+      // First stage: Filter by multiples
+      if (strikeFilter.multiple !== 'none') {
+        const multiple = parseInt(strikeFilter.multiple);
         filtered = filtered.filter(item => item.strikePrice % multiple === 0);
       }
 
+      // Second stage: Filter by ATM range if enabled
+      if (strikeFilter.showATM) {
+        const atmStrike = findATMStrike(filtered);
+        filtered = filtered
+          .filter(item => {
+            const strikeDiff = Math.abs(item.strikePrice - atmStrike);
+            const numStrikes = Math.floor(strikeDiff / 50);
+            return numStrikes <= 10;
+          });
+      }
+
+      // Sort by strike price
+      filtered = filtered.sort((a, b) => a.strikePrice - b.strikePrice);
+      
       setFilteredOptionsData(filtered);
     }
-  }, [selectedExpiry, allOptionsData, strikeFilter, hideZeroVolumeOI]);
+  }, [selectedExpiry, allOptionsData, strikeFilter, spotPrice]);
 
   // Function to calculate the relative width of OI bars
   const getOIBarWidth = (value: number, maxOI: number) => {
@@ -112,7 +165,7 @@ const OptionsChain = () => {
   // Function to render OI cell with visualization
   const renderOICell = (value: number, isCall: boolean, maxOI: number) => {
     return (
-      <td className="p-2 border text-right relative min-w-[120px]">
+      <td className="p-1.5 border text-right relative min-w-[100px]">
         <div className="relative z-10">{value.toLocaleString()}</div>
         <div 
           className={`absolute inset-0 opacity-20 ${isCall ? 'bg-blue-500' : 'bg-red-500'}`}
@@ -140,6 +193,74 @@ const OptionsChain = () => {
     return callChange + putChange;
   };
 
+  // Get ATM strike for current filtered data
+  const atmStrike = findATMStrike(filteredOptionsData);
+
+  // Add the Overlay component
+  const StraddleOverlay = ({ straddle, onClose }: { 
+    straddle: StraddleAction, 
+    onClose: () => void 
+  }) => {
+    return (
+      <>
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={onClose}
+        />
+        <div 
+          className="fixed z-50 bg-white/95 rounded-lg shadow-xl w-48 border border-gray-200/50 backdrop-blur-sm ring-1 ring-black/5"
+          style={{
+            left: `${straddle.x}px`,
+            top: `${straddle.y}px`,
+            transform: 'translate(-50%, 10px)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05)'
+          }}
+        >
+          <div className="p-2 border-b border-gray-200/70 text-center bg-gray-50/50">
+            <div className="text-sm font-semibold">
+              {straddle.strikePrice.toLocaleString()} @ ₹{straddle.straddlePrice.toFixed(2)}
+            </div>
+          </div>
+          <div className="p-2 space-y-2 bg-white/80">
+            <button
+              onClick={() => {
+                console.log('Buy Straddle at', straddle.strikePrice, 'Price:', straddle.straddlePrice);
+                onClose();
+              }}
+              className="w-full py-1.5 px-3 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition-colors shadow-sm"
+            >
+              Buy Straddle
+            </button>
+            <button
+              onClick={() => {
+                console.log('Sell Straddle at', straddle.strikePrice, 'Price:', straddle.straddlePrice);
+                onClose();
+              }}
+              className="w-full py-1.5 px-3 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition-colors shadow-sm"
+            >
+              Sell Straddle
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // Update the filter options based on the index
+  const filterOptions = ({ defaultIndex }: { defaultIndex: 'NIFTY' | 'BANKNIFTY' }) => {
+    if (defaultIndex === 'NIFTY') {
+      return [
+        { value: 'none', label: 'All' },
+        { value: '100', label: '×100' },
+        { value: '500', label: '×500' },
+      ];
+    }
+    return [
+      { value: 'none', label: 'All' },
+      { value: '500', label: '×500' },
+    ];
+  };
+
   if (loading) {
     return (
       <div className="w-full text-center py-8">
@@ -158,16 +279,16 @@ const OptionsChain = () => {
   }
 
   return (
-    <div className="w-full overflow-x-auto">
-      <div className="flex flex-col gap-2 mb-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-bold">NIFTY50 Options Chain</h2>
+    <div className="w-full">
+      <div className="flex flex-col gap-4 mb-4">
+        {/* Header with all controls in one row */}
+        <div className="flex items-center gap-4">
           <select
-            className="px-4 py-2 border rounded-md bg-white dark:bg-gray-800"
             value={selectedExpiry}
             onChange={(e) => setSelectedExpiry(e.target.value)}
+            className="border p-2 rounded"
           >
-            {expiryDates.map(date => (
+            {expiryDates.map((date) => (
               <option key={date} value={date}>
                 {new Date(date).toLocaleDateString('en-IN', {
                   day: 'numeric',
@@ -177,172 +298,207 @@ const OptionsChain = () => {
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex gap-4 text-sm text-gray-600 dark:text-gray-400">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
-              </svg>
-              <span>Strike Filter:</span>
-            </div>
-            <div className="flex gap-2">
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="radio"
-                  className="form-radio text-blue-500"
-                  name="strikeFilter"
-                  checked={strikeFilter === 'none'}
-                  onChange={() => setStrikeFilter('none')}
-                />
-                <span>All</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="radio"
-                  className="form-radio text-blue-500"
-                  name="strikeFilter"
-                  checked={strikeFilter === '100'}
-                  onChange={() => setStrikeFilter('100')}
-                />
-                <span>×100</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="radio"
-                  className="form-radio text-blue-500"
-                  name="strikeFilter"
-                  checked={strikeFilter === '500'}
-                  onChange={() => setStrikeFilter('500')}
-                />
-                <span>×500</span>
-              </label>
-            </div>
-          </div>
+          <button
+            onClick={() => {
+              // Implement refresh logic
+            }}
+            className="p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Refresh
+          </button>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <div className="relative inline-block w-10 h-6 transition duration-200 ease-in-out">
-              <input
-                type="checkbox"
-                className="hidden"
-                checked={hideZeroVolumeOI}
-                onChange={(e) => setHideZeroVolumeOI(e.target.checked)}
-              />
-              <div className={`w-10 h-6 rounded-full transition-colors duration-200 ease-in-out ${
-                hideZeroVolumeOI ? 'bg-blue-500' : 'bg-gray-300'
-              }`}>
-                <div className={`w-4 h-4 mt-1 ml-1 bg-white rounded-full shadow transform duration-200 ease-in-out ${
-                  hideZeroVolumeOI ? 'translate-x-4' : ''
-                }`}></div>
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path>
-              </svg>
-              <span>Hide zero volume/OI</span>
-            </div>
-          </label>
+          {/* View Toggle moved here */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              className={`px-3 py-1 rounded-md text-sm transition-colors ${
+                viewMode === 'normal'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setViewMode('normal')}
+            >
+              Normal View
+            </button>
+            <button
+              className={`px-3 py-1 rounded-md text-sm transition-colors ${
+                viewMode === 'allExpiry'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setViewMode('allExpiry')}
+            >
+              All Expiry
+            </button>
+          </div>
         </div>
       </div>
-      
-      <div className="flex gap-4">
-        {/* Main Options Chain Table */}
-        <div className="flex-1">
-          <table className="min-w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-100 dark:bg-gray-800">
-                <th colSpan={4} className="p-2 border">CALLS</th>
-                <th className="p-2 border">Strike Price</th>
-                <th colSpan={4} className="p-2 border">PUTS</th>
-              </tr>
-              <tr className="bg-gray-50 dark:bg-gray-700">
-                <th className="p-2 border">LTP</th>
-                <th className="p-2 border">Change</th>
-                <th className="p-2 border">OI</th>
-                <th className="p-2 border">Volume</th>
-                <th className="p-2 border"></th>
-                <th className="p-2 border">LTP</th>
-                <th className="p-2 border">Change</th>
-                <th className="p-2 border">OI</th>
-                <th className="p-2 border">Volume</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOptionsData.map((row) => (
-                <tr key={row.strikePrice} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="p-2 border text-right">{row.calls.lastPrice.toFixed(2)}</td>
-                  <td className={`p-2 border text-right ${row.calls.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {row.calls.change > 0 ? '+' : ''}{row.calls.change.toFixed(2)}
-                  </td>
-                  {renderOICell(row.calls.openInterest, true, maxOI)}
-                  <td className="p-2 border text-right">{row.calls.volume.toLocaleString()}</td>
-                  <td className="p-2 border text-center font-bold">{row.strikePrice.toLocaleString()}</td>
-                  <td className="p-2 border text-right">{row.puts.lastPrice.toFixed(2)}</td>
-                  <td className={`p-2 border text-right ${row.puts.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {row.puts.change > 0 ? '+' : ''}{row.puts.change.toFixed(2)}
-                  </td>
-                  {renderOICell(row.puts.openInterest, false, maxOI)}
-                  <td className="p-2 border text-right">{row.puts.volume.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
 
-        {/* Straddle Price Table */}
-        <div className="w-80">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-gray-100 dark:bg-gray-800">
-                <th className="p-2 border">Strike Price</th>
-                <th className="p-2 border">Straddle</th>
-                <th className="p-2 border">Change</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredOptionsData.map((row) => {
-                const straddlePrice = calculateStraddlePrice(
-                  row.calls.lastPrice,
-                  row.puts.lastPrice
-                );
-                const straddleChange = calculateStraddleChange(
-                  row.calls.change,
-                  row.puts.change
-                );
-                return (
-                  <tr key={row.strikePrice} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="p-2 border text-center font-bold">
+      {/* Rest of the component */}
+      {viewMode === 'normal' ? (
+        <div className="flex gap-4">
+          {/* Main Options Chain Table */}
+          <div className="flex-1 max-w-5xl">
+            <table className="w-full border-collapse border border-gray-200">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th colSpan={4} className="p-1.5 border border-gray-200 text-sm">CALLS</th>
+                  <th className="p-1.5 border border-gray-200 text-sm">Strike Price</th>
+                  <th colSpan={4} className="p-1.5 border border-gray-200 text-sm">PUTS</th>
+                </tr>
+                <tr className="bg-gray-50">
+                  <th className="p-1.5 border border-gray-200 text-sm w-20">LTP</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-20">Change</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-24">OI</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-20">Volume</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-24"></th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-20">LTP</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-20">Change</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-24">OI</th>
+                  <th className="p-1.5 border border-gray-200 text-sm w-20">Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOptionsData.map((row) => (
+                  <tr 
+                    key={row.strikePrice} 
+                    className={`hover:bg-gray-50 cursor-pointer ${
+                      row.strikePrice === atmStrike 
+                        ? 'bg-blue-50' 
+                        : ''
+                    }`}
+                    onClick={(e) => {
+                      const straddlePrice = calculateStraddlePrice(
+                        row.calls.lastPrice,
+                        row.puts.lastPrice
+                      );
+                      setSelectedStraddle({ 
+                        strikePrice: row.strikePrice, 
+                        position: null,
+                        x: e.clientX,
+                        y: e.clientY,
+                        straddlePrice
+                      });
+                    }}
+                  >
+                    <td className="p-1.5 border border-gray-200 text-right">{row.calls.lastPrice.toFixed(2)}</td>
+                    <td className={`p-1.5 border border-gray-200 text-right ${
+                      row.calls.change >= 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {row.calls.change > 0 ? '+' : ''}{row.calls.change.toFixed(2)}
+                    </td>
+                    {renderOICell(row.calls.openInterest, true, maxOI)}
+                    <td className="p-1.5 border border-gray-200 text-right">{row.calls.volume.toLocaleString()}</td>
+                    <td className={`p-1.5 border border-gray-200 text-center font-bold ${
+                      row.strikePrice === atmStrike 
+                        ? 'text-blue-600'
+                        : ''
+                    }`}>
+                      {row.strikePrice === atmStrike && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-6">
+                          <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
                       {row.strikePrice.toLocaleString()}
                     </td>
-                    <td className="p-2 border text-right">
-                      {straddlePrice.toFixed(2)}
-                    </td>
-                    <td className={`p-2 border text-right ${
-                      straddleChange >= 0 ? 'text-green-600' : 'text-red-600'
+                    <td className="p-1.5 border border-gray-200 text-right">{row.puts.lastPrice.toFixed(2)}</td>
+                    <td className={`p-1.5 border border-gray-200 text-right ${
+                      row.puts.change >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {straddleChange > 0 ? '+' : ''}
-                      {straddleChange.toFixed(2)}
+                      {row.puts.change > 0 ? '+' : ''}{row.puts.change.toFixed(2)}
                     </td>
+                    {renderOICell(row.puts.openInterest, false, maxOI)}
+                    <td className="p-1.5 border border-gray-200 text-right">{row.puts.volume.toLocaleString()}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      {/* Legend */}
-      <div className="mt-4 flex gap-4 justify-end text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-500 opacity-20"></div>
-          <span>Calls OI</span>
+          {/* Straddle Price Table */}
+          <div className="w-64">
+            <table className="w-full border-collapse border border-gray-200">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="p-2 border border-gray-200">Strike Price</th>
+                  <th className="p-2 border border-gray-200">Straddle</th>
+                  <th className="p-2 border border-gray-200">Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredOptionsData.map((row) => {
+                  const straddlePrice = calculateStraddlePrice(
+                    row.calls.lastPrice,
+                    row.puts.lastPrice
+                  );
+                  const straddleChange = calculateStraddleChange(
+                    row.calls.change,
+                    row.puts.change
+                  );
+                  return (
+                    <tr 
+                      key={row.strikePrice} 
+                      className={`hover:bg-gray-50 cursor-pointer ${
+                        row.strikePrice === atmStrike 
+                          ? 'bg-blue-50' 
+                          : ''
+                      }`}
+                      onClick={(e) => {
+                        const straddlePrice = calculateStraddlePrice(
+                          row.calls.lastPrice,
+                          row.puts.lastPrice
+                        );
+                        setSelectedStraddle({ 
+                          strikePrice: row.strikePrice, 
+                          position: null,
+                          x: e.clientX,
+                          y: e.clientY,
+                          straddlePrice
+                        });
+                      }}
+                    >
+                      <td className={`p-2 border border-gray-200 text-center font-bold ${
+                        row.strikePrice === atmStrike 
+                          ? 'text-blue-600'
+                          : ''
+                      }`}>
+                        {row.strikePrice.toLocaleString()}
+                      </td>
+                      <td className="p-2 border border-gray-200 text-right">
+                        {straddlePrice.toFixed(2)}
+                      </td>
+                      <td className={`p-2 border border-gray-200 text-right ${
+                        straddleChange >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {straddleChange > 0 ? '+' : ''}
+                        {straddleChange.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-red-500 opacity-20"></div>
-          <span>Puts OI</span>
-        </div>
-      </div>
+      ) : (
+        <AllExpiryTable
+          optionsData={allOptionsData}
+          expiryDates={expiryDates}
+          atmStrike={atmStrike}
+          spotPrice={spotPrice}
+          strikeFilter={strikeFilter}
+          defaultIndex={defaultIndex}
+        />
+      )}
+
+      {/* Add the overlay at the end of the component return statement */}
+      {selectedStraddle && (
+        <StraddleOverlay
+          straddle={selectedStraddle}
+          onClose={() => setSelectedStraddle(null)}
+        />
+      )}
     </div>
   );
 };

@@ -246,6 +246,21 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
     );
   };
 
+  // Add this helper function back
+  const filterOptions = ({ defaultIndex }: { defaultIndex: 'NIFTY' | 'BANKNIFTY' }) => {
+    if (defaultIndex === 'NIFTY') {
+      return [
+        { value: 'none', label: 'All' },
+        { value: '100', label: '×100' },
+        { value: '500', label: '×500' },
+      ];
+    }
+    return [
+      { value: 'none', label: 'All' },
+      { value: '500', label: '×500' },
+    ];
+  };
+
   if (loading) {
     return (
       <div className="w-full text-center py-8">
@@ -314,6 +329,54 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
             >
               All Expiry
             </button>
+          </div>
+        </div>
+
+        {/* Add Strike Filter UI */}
+        <div className="flex flex-wrap gap-6 bg-gray-50 p-4 rounded-lg shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-700">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+              </svg>
+              <span className="font-medium">Strike Filter:</span>
+            </div>
+            <div className="flex gap-3 bg-white p-1 rounded-lg shadow-sm">
+              {filterOptions({ defaultIndex }).map((option) => (
+                <label
+                  key={option.value}
+                  className={`flex items-center gap-2 px-3 py-1 rounded-md cursor-pointer transition-colors ${
+                    strikeFilter.multiple === option.value
+                      ? 'bg-blue-500 text-white'
+                      : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    className="hidden"
+                    name="strikeMultiple"
+                    checked={strikeFilter.multiple === option.value}
+                    onChange={() => setStrikeFilter(prev => ({ ...prev, multiple: option.value as 'none' | '100' | '500' }))}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </div>
+            <label
+              className={`flex items-center gap-2 px-3 py-1 rounded-md cursor-pointer transition-colors ${
+                strikeFilter.showATM
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white hover:bg-gray-100'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={strikeFilter.showATM}
+                onChange={(e) => setStrikeFilter(prev => ({ ...prev, showATM: e.target.checked }))}
+              />
+              <span>ATM ±10</span>
+            </label>
           </div>
         </div>
       </div>

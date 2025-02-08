@@ -23,6 +23,11 @@ interface NSEResponse {
   records: {
     data: OptionRecord[];
     underlyingValue: number;
+    expiryDates: string[];
+    strikePrices: number[];
+  };
+  filtered: {
+    data: OptionRecord[];
   };
 }
 
@@ -111,19 +116,17 @@ export async function GET(request: NextRequest) {
 
     const data = await optionsResponse.json() as NSEResponse;
     
-    // Fix the type error by explicitly typing the Set values
-    const expiryDates = [...new Set(data.records.data.map((item: OptionRecord) => item.expiryDate))]
-      .sort((a, b) => {
-        // Ensure we're working with strings
-        const dateA = new Date(a as string).getTime();
-        const dateB = new Date(b as string).getTime();
-        return dateA - dateB;
-      });
-    
+    // Ensure we're sending data in the correct structure
     return NextResponse.json({
-      data: data.records.data,
-      expiryDates,
-      underlyingValue: data.records.underlyingValue
+      records: {
+        data: data.records.data || [],
+        underlyingValue: data.records.underlyingValue || 0,
+        expiryDates: data.records.expiryDates || [],
+        strikePrices: data.records.strikePrices || []
+      },
+      filtered: {
+        data: data.filtered?.data || []
+      }
     });
 
   } catch (error) {

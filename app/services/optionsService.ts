@@ -1,45 +1,44 @@
-interface NSEOptionChainResponse {
+interface NSEResponse {
   records: {
+    data: any[];
     underlyingValue: number;
-    data: Array<{
-      strikePrice: number;
-      expiryDate: string;
-      CE?: {
-        lastPrice: number;
-        change: number;
-        openInterest: number;
-        totalTradedVolume: number;
-      };
-      PE?: {
-        lastPrice: number;
-        change: number;
-        openInterest: number;
-        totalTradedVolume: number;
-      };
-    }>;
+    strikePrices: number[];
+    expiryDates: string[];
   };
-  expiryDates: string[];
+  filtered: {
+    data: any[];
+  };
 }
 
-export const fetchOptionsData = async (symbol: string = 'NIFTY') => {
+export const fetchOptionsData = async (symbol: string) => {
   try {
     const response = await fetch(`/api/options?symbol=${symbol}`);
-
     if (!response.ok) {
       throw new Error('Failed to fetch options data');
     }
-
-    const data: NSEOptionChainResponse = await response.json();
     
+    const data = await response.json();
+    
+    // Check if we have the data in the expected structure
+    if (!data || !data.records) {
+      throw new Error('Invalid data structure received from API');
+    }
+
     return {
-      expiryDates: data.expiryDates,
-      underlyingValue: data.records.underlyingValue,
-      data: data.records.data.filter(item => 
+      expiryDates: data.records.expiryDates || [],
+      underlyingValue: data.records.underlyingValue || 0,
+      data: (data.records.data || []).filter((item: any) => 
         item.strikePrice && (item.CE || item.PE)
       )
     };
+
   } catch (error) {
-    console.error('Error fetching options data:', error);
-    throw error;
+    console.error('Error in fetchOptionsData:', error);
+    // Return default/empty values on error
+    return {
+      expiryDates: [],
+      underlyingValue: 0,
+      data: []
+    };
   }
 }; 

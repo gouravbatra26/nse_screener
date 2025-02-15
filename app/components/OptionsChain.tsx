@@ -49,6 +49,35 @@ interface OptionsChainProps {
 // Add new type for view mode
 type ViewMode = 'normal' | 'allExpiry';
 
+interface RawOptionData {
+  strikePrice: number;
+  expiryDate: string;
+  CE?: {
+    openInterest: number;
+    changeinOpenInterest: number;
+    totalTradedVolume: number;
+    impliedVolatility: number;
+    lastPrice: number;
+    change: number;
+    bidQty: number;
+    bidprice: number;
+    askQty: number;
+    askPrice: number;
+  };
+  PE?: {
+    openInterest: number;
+    changeinOpenInterest: number;
+    totalTradedVolume: number;
+    impliedVolatility: number;
+    lastPrice: number;
+    change: number;
+    bidQty: number;
+    bidprice: number;
+    askQty: number;
+    askPrice: number;
+  };
+}
+
 const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
   const [allOptionsData, setAllOptionsData] = useState<OptionData[]>([]);
   const [filteredOptionsData, setFilteredOptionsData] = useState<OptionData[]>([]);
@@ -56,7 +85,6 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [strikeFilter, setStrikeFilter] = useState<StrikeFilter>({
     multiple: 'none',
     showATM: true
@@ -92,8 +120,8 @@ const OptionsChain = ({ defaultIndex }: OptionsChainProps) => {
 
         // Transform and store all data
         const transformedData: OptionData[] = response.data
-          .filter(item => item.CE || item.PE)
-          .map(item => ({
+          .filter((item: RawOptionData) => item.CE || item.PE)
+          .map((item: RawOptionData) => ({
             strikePrice: item.strikePrice,
             expiryDate: item.expiryDate,
             calls: {
